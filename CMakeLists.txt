@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
+project(task05 VERSION 0.1 LANGUAGES C)
 
 set(ENTITY_NAME mywavsrc)
 
@@ -18,5 +19,5 @@ set_property(TARGET ${ENTITY_NAME} PROPERTY C_STANDARD 11)
 target_compile_options(${ENTITY_NAME} PUBLIC -Wall -Wextra -Wpedantic)
 target_include_directories(${ENTITY_NAME} PUBLIC "${PROJECT_BINARY_DIR}")
 target_include_directories(${ENTITY_NAME} PUBLIC "${GST_INCLUDE_DIRS}")
-set_target_properties(${ENTITY_NAME} PROPERTIES COMPILE_FLAGS ${GST_CFLAGS} )
+set_target_properties(${ENTITY_NAME} PROPERTIES COMPILE_OPTIONS "${GST_CFLAGS}" )
 target_link_libraries(${ENTITY_NAME} ${GST_LIBRARIES})

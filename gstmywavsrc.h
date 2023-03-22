@@ -2,6 +2,7 @@
 #define GST_MYWAVSRC_H
 
 #include <gst/base/gstbasesrc.h>
+#include <stdio.h>
 
 G_BEGIN_DECLS
 
@@ -17,6 +18,8 @@ typedef struct _GstMyWavSrcClass GstMyWavSrcClass;
 struct _GstMyWavSrc
 {
   GstBaseSrc base_mywavsrc;
+  gchar *filename;
+  FILE *fd;
 };
 
 struct _GstMyWavSrcClass

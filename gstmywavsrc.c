@@ -6,6 +6,9 @@
 #include <gst/base/gstbasesrc.h>
 #include "gstmywavsrc.h"
 
+#define BUFFER_SIZE 1024
+#define HEADER_SIZE 44
+
 GST_DEBUG_CATEGORY_STATIC (gst_mywavsrc_debug_category);
 #define GST_CAT_DEFAULT gst_mywavsrc_debug_category
 
@@ -38,18 +41,19 @@ static GstFlowReturn gst_mywavsrc_fill (GstBaseSrc *src, guint64 offset, guint s
 
 enum
 {
-    PROP_0
+    PROP_0,
+    PROP_LOCATION
 };
 
 /* pad templates */
 
 static GstStaticPadTemplate gst_mywavsrc_src_template =
-GST_STATIC_PAD_TEMPLATE (
-    "src",
-    GST_PAD_SRC,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("application/unknown")
-);
+    GST_STATIC_PAD_TEMPLATE(
+        "src", 
+        GST_PAD_SRC, 
+        GST_PAD_ALWAYS,
+        GST_STATIC_CAPS("audio/x-raw, "
+                        "channels = (int) [ 1, 6 ]"));
 
 /* class initialization */
 
@@ -70,10 +74,14 @@ static void gst_mywavsrc_class_init (GstMyWavSrcClass * klass)
     GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
     GstBaseSrcClass *base_src_class = GST_BASE_SRC_CLASS (klass);
 
-    gst_element_class_add_static_pad_template (GST_ELEMENT_CLASS(klass), &gst_mywavsrc_src_template);
+    gst_element_class_add_static_pad_template (
+        GST_ELEMENT_CLASS(klass), 
+        &gst_mywavsrc_src_template
+    );
     gst_element_class_set_static_metadata (
         GST_ELEMENT_CLASS(klass), 
-        "FIXME Long name", "Generic", "FIXME Description",
+        "FIXME Long name", "Generic", 
+        "FIXME Description",
         "FIXME <fixme@example.com>"
     );
 
@@ -100,21 +108,42 @@ static void gst_mywavsrc_class_init (GstMyWavSrcClass * klass)
     base_src_class->create = GST_DEBUG_FUNCPTR (gst_mywavsrc_create);
     base_src_class->alloc = GST_DEBUG_FUNCPTR (gst_mywavsrc_alloc);
     base_src_class->fill = GST_DEBUG_FUNCPTR (gst_mywavsrc_fill);
+
+    g_object_class_install_property (
+        gobject_class, PROP_LOCATION,
+        g_param_spec_string (
+            "location", "File Location",
+            "Path to wave file", "",
+            G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS
+        )
+    );
 }
 
 static void gst_mywavsrc_init (GstMyWavSrc *mywavsrc)
 {
-    (void) mywavsrc;
+}
+
+static gboolean gst_file_src_set_location (GstMyWavSrc *src, const gchar *location)
+{
+    g_free (src->filename);
+    if (location != NULL) {
+        src->filename = g_strdup (location);
+    }  else {
+        src->filename = NULL;
+    }
+
+    return TRUE;
 }
 
 void gst_mywavsrc_set_property (GObject *object, guint property_id, const GValue *value, GParamSpec *pspec)
 {
-    (void) value;
-
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (object);
     GST_DEBUG_OBJECT (mywavsrc, "set_property");
 
     switch (property_id) {
+        case PROP_LOCATION:
+            gst_file_src_set_location (mywavsrc, g_value_get_string (value));
+            break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
             break;
@@ -123,12 +152,13 @@ void gst_mywavsrc_set_property (GObject *object, guint property_id, const GValue
 
 void gst_mywavsrc_get_property (GObject *object, guint property_id, GValue *value, GParamSpec *pspec)
 {
-    (void) value;
-
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (object);
     GST_DEBUG_OBJECT (mywavsrc, "get_property");
 
     switch (property_id) {
+        case PROP_LOCATION:
+            g_value_set_string (value, mywavsrc->filename);
+            break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
             break;
@@ -146,6 +176,9 @@ void gst_mywavsrc_finalize (GObject *object)
 {
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (object);
     GST_DEBUG_OBJECT (mywavsrc, "finalize");
+    if (mywavsrc->filename != NULL) {
+        g_free(mywavsrc->filename);
+    }
     G_OBJECT_CLASS (gst_mywavsrc_parent_class)->finalize (object);
 }
 
@@ -194,14 +227,16 @@ static gboolean gst_mywavsrc_decide_allocation (GstBaseSrc *src, GstQuery *query
 static gboolean gst_mywavsrc_start (GstBaseSrc *src)
 {
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (src);
-    GST_DEBUG_OBJECT (mywavsrc, "start");
-    return TRUE;
+    GST_DEBUG_OBJECT (mywavsrc, "open file %s", mywavsrc->filename);
+    mywavsrc->fd = fopen(mywavsrc->filename, "r");
+    return mywavsrc->fd ? TRUE : FALSE;
 }
 
 static gboolean gst_mywavsrc_stop (GstBaseSrc *src)
 {
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (src);
     GST_DEBUG_OBJECT (mywavsrc, "stop");
+    fclose(mywavsrc->fd);
     return TRUE;
 }
 
@@ -221,14 +256,14 @@ static gboolean gst_mywavsrc_get_size (GstBaseSrc *src, guint64 *size)
 
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (src);
     GST_DEBUG_OBJECT (mywavsrc, "get_size");
-    return TRUE;
+    return FALSE;
 }
 
 static gboolean gst_mywavsrc_is_seekable (GstBaseSrc *src)
 {
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (src);
     GST_DEBUG_OBJECT (mywavsrc, "is_seekable");
-    return TRUE;
+    return FALSE;
 }
 
 static gboolean gst_mywavsrc_prepare_seek_segment (GstBaseSrc *src, GstEvent *seek, GstSegment *segment)
@@ -238,7 +273,7 @@ static gboolean gst_mywavsrc_prepare_seek_segment (GstBaseSrc *src, GstEvent *se
 
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (src);
     GST_DEBUG_OBJECT (mywavsrc, "prepare_seek_segment");
-    return TRUE;
+    return FALSE;
 }
 
 static gboolean gst_mywavsrc_do_seek (GstBaseSrc *src, GstSegment *segment)
@@ -254,14 +289,14 @@ static gboolean gst_mywavsrc_unlock (GstBaseSrc *src)
 {
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (src);
     GST_DEBUG_OBJECT (mywavsrc, "unlock");
-    return TRUE;
+    return FALSE;
 }
 
 static gboolean gst_mywavsrc_unlock_stop (GstBaseSrc *src)
 {
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (src);
     GST_DEBUG_OBJECT (mywavsrc, "unlock_stop");
-    return TRUE;
+    return FALSE;
 }
 
 static gboolean gst_mywavsrc_query (GstBaseSrc *src, GstQuery *query)
@@ -269,8 +304,8 @@ static gboolean gst_mywavsrc_query (GstBaseSrc *src, GstQuery *query)
     (void) query;
     
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (src);
-    GST_DEBUG_OBJECT (mywavsrc, "query");
-    return TRUE;
+    GST_DEBUG_OBJECT (mywavsrc, "query '%s'", gst_query_type_get_name(GST_QUERY_TYPE(query)));
+    return FALSE;
 }
 
 static gboolean gst_mywavsrc_event (GstBaseSrc *src, GstEvent *event)
@@ -284,12 +319,39 @@ static gboolean gst_mywavsrc_event (GstBaseSrc *src, GstEvent *event)
 
 static GstFlowReturn gst_mywavsrc_create (GstBaseSrc *src, guint64 offset, guint size, GstBuffer **buf)
 {
-    (void) offset;
-    (void) size;
-    (void) buf;
-
     GstMyWavSrc *mywavsrc = GST_MYWAVSRC (src);
-    GST_DEBUG_OBJECT (mywavsrc, "create");
+    GST_DEBUG_OBJECT (mywavsrc, "reade file \"%s\".", mywavsrc->filename);
+
+    GstBuffer *buffer = gst_buffer_new();
+    gchar *data = g_malloc(size);
+    g_assert(data);
+    if (!data) {
+        *buf = NULL;
+        return GST_FLOW_ERROR;
+    }
+    
+    if (fseek(mywavsrc->fd, offset + HEADER_SIZE, SEEK_SET) != 0) {
+        *buf = NULL;
+        return GST_FLOW_ERROR;
+    }
+
+    int rd_sz = fread(data, 1, size, mywavsrc->fd);
+    if (rd_sz <= 0) {
+        g_free(data);
+        *buf = NULL;
+        return GST_FLOW_OK;
+    }
+
+    GstMemory *memory = gst_memory_new_wrapped(0, data, rd_sz, 0, rd_sz, data, g_free);
+    g_assert(memory);
+    if (!memory) {
+        g_free(data);
+        *buf = NULL;
+        return GST_FLOW_ERROR;
+    }
+  
+    gst_buffer_insert_memory(buffer, -1, memory);
+    *buf = buffer;
     return GST_FLOW_OK;
 }
 
